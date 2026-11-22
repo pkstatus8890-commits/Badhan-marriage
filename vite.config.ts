@@ -5,14 +5,13 @@ import { defineConfig } from 'vite';
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
 const port = Number(process.env.PORT || 3000);
-const basePath = process.env.BASE_PATH || '/';
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${process.env.PORT}"`);
 }
 
 export default defineConfig({
-  \'base: './'\`
+  base: './',
   plugins: [
     react(),
     tailwindcss(),
@@ -63,4 +62,3 @@ export default defineConfig({
     allowedHosts: true,
   },
 });
-    
