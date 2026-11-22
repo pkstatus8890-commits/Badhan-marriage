@@ -1,6 +1,6 @@
 
 packages:
-'-@workspace/api-client-react'
+@workspace/api -client-react
 '
 catalog:
   "@replit/vite-plugin-cartographer": "^0.5.21"
