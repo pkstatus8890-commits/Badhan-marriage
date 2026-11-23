@@ -1,0 +1,790 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: admin
+    description: Secure administrative operations
+  - name: catalog
+    description: Public profile and course catalogs
+  - name: members
+    description: Verified member profiles, connections, messaging, and safety
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /auth/otp/request:
+    post:
+      operationId: requestMemberOtp
+      tags: [members]
+      summary: Send a real phone verification code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PhoneInput" }
+      responses:
+        "200":
+          description: Verification request accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OtpRequestResult" }
+        "429": { description: Rate limit exceeded }
+        "503": { description: SMS provider is not configured }
+  /auth/otp/verify:
+    post:
+      operationId: verifyMemberOtp
+      tags: [members]
+      summary: Verify a phone code and create a member session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OtpVerificationInput" }
+      responses:
+        "200":
+          description: Verified member session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemberSession" }
+        "401": { description: Invalid or expired verification code }
+        "503": { description: SMS provider is not configured }
+  /auth/session:
+    get:
+      operationId: getMemberSession
+      tags: [members]
+      summary: Return the signed-in member identity
+      responses:
+        "200":
+          description: Current member session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemberSession" }
+        "401": { description: Member sign-in required }
+  /auth/logout:
+    post:
+      operationId: logoutMember
+      tags: [members]
+      summary: Revoke the signed-in member session
+      responses:
+        "200":
+          description: Session revoked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogoutResult" }
+  /profiles:
+    get:
+      operationId: searchMemberProfiles
+      tags: [members]
+      summary: Search approved profiles using member-selected filters
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: minAge, in: query, schema: { type: integer, minimum: 18, maximum: 100 } }
+        - { name: maxAge, in: query, schema: { type: integer, minimum: 18, maximum: 100 } }
+        - { name: gender, in: query, schema: { type: string } }
+        - { name: city, in: query, schema: { type: string } }
+        - { name: district, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+        - { name: communityId, in: query, schema: { type: string, format: uuid } }
+        - { name: education, in: query, schema: { type: string } }
+        - { name: profession, in: query, schema: { type: string } }
+        - { name: maritalStatus, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: Matching approved profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PublicProfile" }
+        "401": { description: Member sign-in required }
+  /profiles/{profileId}:
+    get:
+      operationId: getMemberProfile
+      tags: [members]
+      summary: View an approved member profile without private contact details
+      parameters:
+        - { name: profileId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Public member profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicProfile" }
+        "401": { description: Member sign-in required }
+        "404": { description: Profile not found }
+  /me/profile:
+    get:
+      operationId: getMyMarriageProfile
+      tags: [members]
+      summary: Load the member's private marriage profile
+      responses:
+        "200":
+          description: Member-owned profile, including private address
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MyProfile" }
+        "401": { description: Member sign-in required }
+  /me/photos:
+    post:
+      operationId: attachMyProfilePhoto
+      tags: [members]
+      summary: Attach an uploaded image to the signed-in member profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProfilePhotoInput" }
+      responses:
+        "201":
+          description: Photo attached for moderation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LooseRecord" }
+        "401": { description: Member sign-in required }
+        "403": { description: Upload is not owned by this profile }
+  /me/photos/{photoId}:
+    delete:
+      operationId: deleteMyProfilePhoto
+      tags: [members]
+      summary: Delete a photo from the signed-in member profile
+      parameters:
+        - { name: photoId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Photo deleted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogoutResult" }
+        "401": { description: Member sign-in required }
+        "404": { description: Photo not found }
+  /storage/uploads/request-url:
+    post:
+      operationId: requestProfilePhotoUploadUrl
+      tags: [members]
+      summary: Request a short-lived upload URL for a profile photo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PhotoUploadUrlInput" }
+      responses:
+        "200":
+          description: A restricted, expiring upload URL
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PhotoUploadUrlResponse" }
+        "401": { description: Member sign-in required }
+        "413": { description: Image is too large }
+        "503": { description: Object storage is not configured }
+        "404": { description: Profile not created }
+    put:
+      operationId: saveMyMarriageProfile
+      tags: [members]
+      summary: Create or update the signed-in member's marriage profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProfileInput" }
+      responses:
+        "200":
+          description: Saved member-owned profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MyProfile" }
+        "400": { description: Profile validation failed }
+        "401": { description: Member sign-in required }
+  /requests:
+    get:
+      operationId: listMemberRequests
+      tags: [members]
+      summary: List sent and received connection interests
+      responses:
+        "200":
+          description: Connection requests
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RequestLists" }
+        "401": { description: Member sign-in required }
+    post:
+      operationId: sendMemberInterest
+      tags: [members]
+      summary: Send an interest request to an approved profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InterestInput" }
+      responses:
+        "201":
+          description: Interest request created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LooseRecord" }
+        "401": { description: Member sign-in required }
+        "409": { description: Request already exists }
+  /requests/{requestId}:
+    patch:
+      operationId: respondToMemberInterest
+      tags: [members]
+      summary: Accept or decline a received interest request
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RequestResponseInput" }
+      responses:
+        "200":
+          description: Request response saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LooseRecord" }
+        "401": { description: Member sign-in required }
+        "404": { description: Request not found or not owned by this member }
+  /conversations:
+    get:
+      operationId: listMemberConversations
+      tags: [members]
+      summary: List accepted conversations for the signed-in member
+      responses:
+        "200":
+          description: Conversation list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/LooseRecord" }
+        "401": { description: Member sign-in required }
+  /conversations/{conversationId}/messages:
+    get:
+      operationId: listConversationMessages
+      tags: [members]
+      summary: Load messages for a participant in an active conversation
+      parameters:
+        - { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Conversation messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/LooseRecord" }
+        "401": { description: Member sign-in required }
+        "404": { description: Conversation not available }
+    post:
+      operationId: sendConversationMessage
+      tags: [members]
+      summary: Send a message subject to the member's current plan limit
+      parameters:
+        - { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MessageInput" }
+      responses:
+        "201":
+          description: Message sent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LooseRecord" }
+        "401": { description: Member sign-in required }
+        "403": { description: Message plan limit reached or conversation closed }
+        "404": { description: Conversation not available }
+  /reports:
+    post:
+      operationId: reportMember
+      tags: [members]
+      summary: Report a member for safety review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReportInput" }
+      responses:
+        "201":
+          description: Safety report created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LooseRecord" }
+        "401": { description: Member sign-in required }
+  /blocks:
+    post:
+      operationId: blockMember
+      tags: [members]
+      summary: Block a member from contacting the signed-in member
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BlockInput" }
+      responses:
+        "201":
+          description: Member blocked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogoutResult" }
+        "401": { description: Member sign-in required }
+  /communities/suggest:
+    post:
+      operationId: suggestCommunity
+      tags: [members]
+      summary: Add a self-selected community label to the searchable catalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommunitySuggestionInput" }
+      responses:
+        "201":
+          description: Community option created or already present
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommunityOption" }
+        "401": { description: Member sign-in required }
+  /admin/login:
+    post:
+      operationId: adminLogin
+      tags: [admin]
+      summary: Start a separate administrator session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminLoginInput"
+      responses:
+        "200":
+          description: Authenticated administrator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSession"
+        "401":
+          description: Invalid credentials
+  /admin/session:
+    get:
+      operationId: getAdminSession
+      tags: [admin]
+      summary: Check the administrator session
+      responses:
+        "200":
+          description: Current administrator identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSession"
+        "401":
+          description: No active administrator session
+  /admin/logout:
+    post:
+      operationId: adminLogout
+      tags: [admin]
+      summary: Revoke the current administrator session
+      responses:
+        "200":
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutResult"
+  /admin/dashboard:
+    get:
+      operationId: getAdminDashboard
+      tags: [admin]
+      summary: Load database-backed dashboard statistics
+      responses:
+        "200":
+          description: Administrative dashboard metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDashboard"
+        "401":
+          description: Administrator access required
+  /admin/data:
+    get:
+      operationId: getAdminData
+      tags: [admin]
+      summary: Load management records for the administrator console
+      responses:
+        "200":
+          description: Administrative datasets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminData"
+        "401":
+          description: Administrator access required
+  /admin/actions:
+    post:
+      operationId: runAdminAction
+      tags: [admin]
+      summary: Run a validated, audited administrative action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminActionInput"
+      responses:
+        "200":
+          description: Action completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminActionResponse"
+        "400":
+          description: Invalid action or payload
+        "401":
+          description: Administrator access required
+  /communities:
+    get:
+      operationId: listPublicCommunities
+      tags: [catalog]
+      summary: List active, self-selected caste and community labels
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Active community options
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CommunityOption"
+  /courses:
+    get:
+      operationId: listPublishedCourses
+      tags: [catalog]
+      summary: List published courses
+      responses:
+        "200":
+          description: Published courses available to members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CourseSummary"
+  /plans:
+    get:
+      operationId: listPublicPlans
+      tags: [catalog]
+      summary: List current active membership plans
+      responses:
+        "200":
+          description: Active plans with message rules and prices in INR
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PublicPlan" }
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    AdminLoginInput:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 12 }
+      required: [email, password]
+    PhoneInput:
+      type: object
+      properties:
+        phone: { type: string, minLength: 10, maxLength: 20 }
+      required: [phone]
+    OtpVerificationInput:
+      type: object
+      properties:
+        phone: { type: string, minLength: 10, maxLength: 20 }
+        code: { type: string, pattern: "^[0-9]{4,10}$" }
+      required: [phone, code]
+    OtpRequestResult:
+      type: object
+      properties:
+        sent: { type: boolean }
+        expiresInSeconds: { type: integer }
+      required: [sent, expiresInSeconds]
+    MemberSession:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        phone: { type: string }
+        profileId: { type: ["string", "null"], format: uuid }
+      required: [userId, phone, profileId]
+    PublicProfile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        dateOfBirth: { type: string, format: date }
+        age: { type: integer }
+        gender: { type: string }
+        city: { type: string }
+        district: { type: string }
+        state: { type: string }
+        religion: { type: string }
+        communityId: { type: ["string", "null"], format: uuid }
+        community: { type: ["string", "null"] }
+        subCommunity: { type: string }
+        education: { type: string }
+        profession: { type: string }
+        maritalStatus: { type: string }
+        gotra: { type: string }
+        height: { type: string }
+        family: { type: string }
+        about: { type: string }
+        partnerPreference: { type: string }
+        photos: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+      required: [id, name, dateOfBirth, age, gender, city, district, state, religion, subCommunity, education, profession, maritalStatus, gotra, height, family, about, partnerPreference, photos]
+    MyProfile:
+      allOf:
+        - { $ref: "#/components/schemas/PublicProfile" }
+        - type: object
+          properties:
+            privateAddress: { type: string }
+            approvalStatus: { type: string }
+            rejectionReason: { type: ["string", "null"] }
+          required: [privateAddress, approvalStatus]
+    ProfileInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        dateOfBirth: { type: string, format: date }
+        gender: { type: string, minLength: 1, maxLength: 40 }
+        city: { type: string, maxLength: 120 }
+        district: { type: string, maxLength: 120 }
+        state: { type: string, maxLength: 120 }
+        religion: { type: string, maxLength: 120 }
+        communityId: { type: string, format: uuid }
+        subCommunity: { type: string, maxLength: 120 }
+        privateAddress: { type: string, maxLength: 1000 }
+        education: { type: string, maxLength: 300 }
+        profession: { type: string, maxLength: 300 }
+        maritalStatus: { type: string, maxLength: 80 }
+        gotra: { type: string, maxLength: 120 }
+        height: { type: string, maxLength: 40 }
+        family: { type: string, maxLength: 2000 }
+        about: { type: string, maxLength: 3000 }
+        partnerPreference: { type: string, maxLength: 2000 }
+      required: [name, dateOfBirth, gender, city, district, state, religion, communityId, subCommunity, education, profession, maritalStatus, privateAddress]
+    RequestLists:
+      type: object
+      properties:
+        sent: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        received: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+      required: [sent, received]
+    InterestInput:
+      type: object
+      properties:
+        profileId: { type: string, format: uuid }
+      required: [profileId]
+    RequestResponseInput:
+      type: object
+      properties:
+        status: { type: string, enum: [accepted, rejected] }
+      required: [status]
+    MessageInput:
+      type: object
+      properties:
+        content: { type: string, minLength: 1, maxLength: 4000 }
+      required: [content]
+    ReportInput:
+      type: object
+      properties:
+        profileId: { type: string, format: uuid }
+        reason: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 2000 }
+      required: [profileId, reason]
+    BlockInput:
+      type: object
+      properties:
+        profileId: { type: string, format: uuid }
+      required: [profileId]
+    CommunitySuggestionInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+      required: [name]
+    PhotoUploadUrlInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        size: { type: integer, minimum: 1, maximum: 10485760 }
+        contentType: { type: string, enum: [image/jpeg, image/png, image/webp] }
+      required: [name, size, contentType]
+    PhotoUploadUrlResponse:
+      type: object
+      properties:
+        uploadURL: { type: string, format: uri }
+        objectPath: { type: string }
+      required: [uploadURL, objectPath]
+    ProfilePhotoInput:
+      type: object
+      properties:
+        objectPath: { type: string, minLength: 1, maxLength: 500 }
+        isPrimary: { type: boolean }
+      required: [objectPath]
+    AdminSession:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { type: string, enum: [admin, super_admin] }
+      required: [id, email, role]
+    LogoutResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+      required: [ok]
+    AdminDashboard:
+      type: object
+      properties:
+        totalUsers: { type: integer }
+        maleProfiles: { type: integer }
+        femaleProfiles: { type: integer }
+        activeProfiles: { type: integer }
+        pendingApprovals: { type: integer }
+        totalRequests: { type: integer }
+        acceptedRequests: { type: integer }
+        activeChats: { type: integer }
+        premiumSubscribers: { type: integer }
+        activeSubscriptions: { type: integer }
+        expiredSubscriptions: { type: integer }
+        cancelledSubscriptions: { type: integer }
+        monthlyRevenue: { type: number }
+        renewalsDue: { type: integer }
+        popularPlan: { type: string }
+        reportedUsers: { type: integer }
+        blockedUsers: { type: integer }
+        totalCourses: { type: integer }
+        publishedCourses: { type: integer }
+        draftCourses: { type: integer }
+        courseEnrollments: { type: integer }
+      required: [totalUsers, maleProfiles, femaleProfiles, activeProfiles, pendingApprovals, totalRequests, acceptedRequests, activeChats, premiumSubscribers, activeSubscriptions, expiredSubscriptions, cancelledSubscriptions, monthlyRevenue, renewalsDue, popularPlan, reportedUsers, blockedUsers, totalCourses, publishedCourses, draftCourses, courseEnrollments]
+    AdminData:
+      type: object
+      properties:
+        users: { type: array, items: { $ref: "#/components/schemas/AdminUserRecord" } }
+        requests: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        conversations: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        reports: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        communities: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        communityCategories: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        plans: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        subscriptions: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        payments: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        courses: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        courseCategories: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        courseEnrollments: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        searchFields: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        settings: { type: object, additionalProperties: true }
+        messageSettings: { type: object, additionalProperties: true }
+        activity: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+      required: [users, requests, conversations, reports, communities, communityCategories, plans, subscriptions, payments, courses, courseCategories, courseEnrollments, searchFields, settings, messageSettings, activity]
+    AdminUserRecord:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        phone: { type: string }
+        email: { type: ["string", "null"] }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastLoginAt: { type: ["string", "null"], format: date-time }
+        profile: { $ref: "#/components/schemas/LooseRecord" }
+        subscription: { $ref: "#/components/schemas/LooseRecord" }
+      required: [id, phone, status, createdAt]
+    LooseRecord:
+      type: object
+      additionalProperties: true
+    AdminActionInput:
+      type: object
+      properties:
+        action: { type: string, minLength: 1 }
+        payload: { type: object, additionalProperties: true }
+      required: [action, payload]
+    AdminActionResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        id: { type: ["string", "null"] }
+      required: [ok]
+    CommunityOption:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        category: { type: ["string", "null"] }
+      required: [id, name]
+    CourseSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        shortDescription: { type: string }
+        description: { type: string }
+        category: { type: ["string", "null"] }
+        duration: { type: string }
+        price: { type: number }
+        isFree: { type: boolean }
+        thumbnailPath: { type: ["string", "null"] }
+        content: { type: array, items: { $ref: "#/components/schemas/LooseRecord" } }
+        externalLink: { type: ["string", "null"] }
+      required: [id, title, shortDescription, description, duration, price, isFree, content]
+    PublicPlan:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        monthlyPrice: { type: number }
+        currency: { type: string }
+        durationDays: { type: integer }
+        features: { type: array, items: { type: string } }
+        messageLimit: { type: ["integer", "null"] }
+        unlimitedMessaging: { type: boolean }
+        advancedSearch: { type: boolean }
+        priorityListing: { type: boolean }
+      required: [id, name, monthlyPrice, currency, durationDays, features, unlimitedMessaging, advancedSearch, priorityListing]
+
